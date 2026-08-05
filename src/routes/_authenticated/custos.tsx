@@ -41,7 +41,7 @@ export const Route = createFileRoute("/_authenticated/custos")({
       },
     ],
   }),
-  component: Custos;
+  component: Custos,
 });
 
 const RESULTADO_VAZIO: ResultadoSafra = {
