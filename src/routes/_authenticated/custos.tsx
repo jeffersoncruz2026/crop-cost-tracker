@@ -4,6 +4,7 @@ import { useDados, useRecarregar, calcularResultado, type ResultadoSafra } from 
 import { inserir, remover } from "@/lib/crud";
 import { brl, num, dataBR, competenciaBR, hoje, mesAtual } from "@/lib/format";
 import { PageHeader, StatCard, Vazio } from "@/components/agro";
+import { ImportarCustosDialog } from "@/components/importar-custos-dialog";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,6 +69,7 @@ function Custos() {
 
   const [apont, setApont] = useState({
     categoria_id: "",
+    fazenda_id: "",
     competencia: mesAtual().slice(0, 7),
     descricao: "",
     valor: "",
@@ -94,19 +96,22 @@ function Custos() {
         titulo="Custos & Colheita"
         descricao="Lance os custos já rateados do mês e registre a colheita para travar o custo unitário."
         acao={
-          <div className="w-64">
-            <Select value={idAtual} onValueChange={setSafraId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione a safra" />
-              </SelectTrigger>
-              <SelectContent>
-                {d.safras.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.nome}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex items-end gap-3">
+            <ImportarCustosDialog />
+            <div className="w-64">
+              <Select value={idAtual} onValueChange={setSafraId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione a safra" />
+                </SelectTrigger>
+                <SelectContent>
+                  {d.safras.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         }
       />
@@ -144,6 +149,7 @@ function Custos() {
                     const ok = await inserir("apontamentos_custo", {
                       safra_id: idAtual,
                       categoria_id: apont.categoria_id,
+                      fazenda_id: apont.fazenda_id || null,
                       competencia: `${apont.competencia}-01`,
                       descricao: apont.descricao,
                       valor: Number(apont.valor),
@@ -169,6 +175,24 @@ function Custos() {
                         {d.categorias.map((c) => (
                           <SelectItem key={c.id} value={c.id}>
                             {c.nome}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Fazenda</Label>
+                    <Select
+                      value={apont.fazenda_id}
+                      onValueChange={(v) => setApont({ ...apont, fazenda_id: v })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Opcional" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {d.fazendas.map((f) => (
+                          <SelectItem key={f.id} value={f.id}>
+                            {f.nome}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -255,7 +279,9 @@ function Custos() {
                         type="date"
                         required
                         value={colheita.data_colheita}
-                        onChange={(e) => setColheita({ ...colheita, data_colheita: e.target.value })}
+                        onChange={(e) =>
+                          setColheita({ ...colheita, data_colheita: e.target.value })
+                        }
                       />
                     </div>
                     <div className="space-y-2">
@@ -323,6 +349,7 @@ function Custos() {
                       <TableRow>
                         <TableHead>Competência</TableHead>
                         <TableHead>Categoria</TableHead>
+                        <TableHead>Fazenda</TableHead>
                         <TableHead>Descrição</TableHead>
                         <TableHead className="text-right">Valor</TableHead>
                         <TableHead />
@@ -334,6 +361,9 @@ function Custos() {
                           <TableCell className="num">{competenciaBR(a.competencia)}</TableCell>
                           <TableCell>
                             {d.categorias.find((c) => c.id === a.categoria_id)?.nome}
+                          </TableCell>
+                          <TableCell>
+                            {d.fazendas.find((f) => f.id === a.fazenda_id)?.nome ?? "—"}
                           </TableCell>
                           <TableCell className="max-w-[280px] truncate">{a.descricao}</TableCell>
                           <TableCell className="num text-right">{brl(Number(a.valor))}</TableCell>
