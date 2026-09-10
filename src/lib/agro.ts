@@ -23,6 +23,7 @@ export type Apontamento = {
   valor: number;
   data_lancamento: string;
   observacao: string | null;
+  origem_linha: number | null;
 };
 export type Colheita = {
   id: string;

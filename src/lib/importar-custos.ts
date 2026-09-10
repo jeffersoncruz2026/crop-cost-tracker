@@ -9,8 +9,11 @@ const COL_DESCRICAO_2 = "NOMEPRODUTO";
 const COL_VALOR = "SALDO";
 const COL_DATA = "DATA";
 const COL_CONTA = "CONTA_CONTABIL";
+const COL_ORIGEM = "ROWL";
 
 export const COLUNAS_OBRIGATORIAS = [COL_FAZENDA, COL_SAFRA, COL_VALOR, COL_DATA] as const;
+
+const TAMANHO_LOTE = 200;
 
 export type LinhaCustoValida = {
   fazenda: string;
@@ -22,6 +25,9 @@ export type LinhaCustoValida = {
   valor: number;
   competencia: string;
   dataLancamento: string;
+  /** Identificador único da linha no extrato de origem (coluna ROWL), usado para não duplicar
+   * lançamentos ao reimportar o mesmo relatório em meses seguintes. */
+  origemLinha: number | null;
 };
 
 type GrupoResumo = { nome: string; registros: number; valorTotal: number };
@@ -76,6 +82,9 @@ export function analisarPlanilhaCustos(linhas: LinhaPlanilha[]): ResultadoAnalis
       categoria ||
       "Custo importado da planilha";
     const conta = texto(linha[COL_CONTA]);
+    const origemTexto = texto(linha[COL_ORIGEM]);
+    const origemLinha =
+      origemTexto && Number.isFinite(Number(origemTexto)) ? Number(origemTexto) : null;
 
     validas.push({
       fazenda,
@@ -89,6 +98,7 @@ export function analisarPlanilhaCustos(linhas: LinhaPlanilha[]): ResultadoAnalis
       valor,
       competencia: primeiroDiaDoMes(dataRaw),
       dataLancamento: dataRaw,
+      origemLinha,
     });
 
     const fz = fazendasMap.get(fazenda) ?? { nome: fazenda, registros: 0, valorTotal: 0 };
@@ -126,6 +136,24 @@ export function analisarPlanilhaCustos(linhas: LinhaPlanilha[]): ResultadoAnalis
     safras: [...safrasMap.values()].sort((a, b) => a.nome.localeCompare(b.nome)),
     categorias: [...categoriasMap.values()].sort((a, b) => a.nome.localeCompare(b.nome)),
   };
+}
+
+/** Quantas destas linhas (por origemLinha) já foram importadas antes pelo usuário atual. */
+export async function contarJaImportados(analise: ResultadoAnalise): Promise<number> {
+  const origens = analise.linhas.map((l) => l.origemLinha).filter((v): v is number => v !== null);
+  if (origens.length === 0) return 0;
+
+  let encontrados = 0;
+  for (let i = 0; i < origens.length; i += TAMANHO_LOTE) {
+    const lote = origens.slice(i, i + TAMANHO_LOTE);
+    const { data, error } = await supabase
+      .from("apontamentos_custo" as never)
+      .select("origem_linha")
+      .in("origem_linha", lote as never);
+    if (error) throw new Error(`Falha ao verificar duplicidade: ${error.message}`);
+    encontrados += (data as unknown[] | null)?.length ?? 0;
+  }
+  return encontrados;
 }
 
 type MapaIds = Map<string, string>;
@@ -193,12 +221,11 @@ export type CadastroExistente = { id: string; nome: string };
 
 export type ResultadoImportacao = {
   apontamentosCriados: number;
+  duplicadosIgnorados: number;
   fazendasCriadas: number;
   safrasCriadas: number;
   categoriasCriadas: number;
 };
-
-const TAMANHO_LOTE = 200;
 
 /** Cria as fazendas/safras/categorias que ainda não existem e grava os lançamentos de custo em lote. */
 export async function importarCustos(
@@ -237,16 +264,25 @@ export async function importarCustos(
     valor: l.valor,
     data_lancamento: l.dataLancamento,
     observacao: l.observacao,
+    origem_linha: l.origemLinha,
   }));
 
+  // upsert + ignoreDuplicates: linhas com o mesmo (user_id, origem_linha) de uma importação
+  // anterior são puladas em vez de duplicadas — permite reimportar o mesmo relatório todo mês.
+  let apontamentosCriados = 0;
   for (let i = 0; i < registros.length; i += TAMANHO_LOTE) {
     const lote = registros.slice(i, i + TAMANHO_LOTE);
-    const { error } = await supabase.from("apontamentos_custo" as never).insert(lote as never);
+    const { data, error } = await supabase
+      .from("apontamentos_custo" as never)
+      .upsert(lote as never, { onConflict: "user_id,origem_linha", ignoreDuplicates: true })
+      .select("id");
     if (error) throw new Error(`Falha ao importar lançamentos: ${error.message}`);
+    apontamentosCriados += (data as unknown[] | null)?.length ?? 0;
   }
 
   return {
-    apontamentosCriados: registros.length,
+    apontamentosCriados,
+    duplicadosIgnorados: registros.length - apontamentosCriados,
     fazendasCriadas: fazendasMap.size - fazendasAntes,
     safrasCriadas: safrasMap.size - safrasAntes,
     categoriasCriadas: categoriasMap.size - categoriasAntes,

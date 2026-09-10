@@ -5,6 +5,7 @@ import { useDados, useRecarregar } from "@/lib/agro";
 import { lerPlanilhaXlsx } from "@/lib/xlsx-lite";
 import {
   analisarPlanilhaCustos,
+  contarJaImportados,
   importarCustos,
   COLUNAS_OBRIGATORIAS,
   type ResultadoAnalise,
@@ -74,6 +75,7 @@ export function ImportarCustosDialog() {
   const [estado, setEstado] = useState<"ocioso" | "lendo" | "importando">("ocioso");
   const [erro, setErro] = useState<string | null>(null);
   const [analise, setAnalise] = useState<ResultadoAnalise | null>(null);
+  const [jaImportados, setJaImportados] = useState<number | null>(null);
   const [culturaId, setCulturaId] = useState("");
 
   function reiniciar() {
@@ -81,6 +83,7 @@ export function ImportarCustosDialog() {
     setEstado("ocioso");
     setErro(null);
     setAnalise(null);
+    setJaImportados(null);
     setCulturaId("");
   }
 
@@ -105,6 +108,12 @@ export function ImportarCustosDialog() {
         resultado.safras.some((s) => s.nome.toUpperCase().includes(c.nome.toUpperCase())),
       );
       if (culturaDetectada) setCulturaId(culturaDetectada.id);
+
+      try {
+        setJaImportados(await contarJaImportados(resultado));
+      } catch {
+        setJaImportados(null); // não bloqueia a importação se a checagem falhar
+      }
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao ler a planilha.");
     } finally {
@@ -122,10 +131,14 @@ export function ImportarCustosDialog() {
         safras: d.safras,
         categorias: d.categorias,
       });
+      const duplicados =
+        resultado.duplicadosIgnorados > 0
+          ? ` ${resultado.duplicadosIgnorados} já existiam e foram ignorados.`
+          : "";
       toast.success(
         `${resultado.apontamentosCriados} lançamentos importados` +
           ` (${resultado.fazendasCriadas} fazendas, ${resultado.safrasCriadas} safras e` +
-          ` ${resultado.categoriasCriadas} categorias novas).`,
+          ` ${resultado.categoriasCriadas} categorias novas).${duplicados}`,
       );
       recarregar();
       setOpen(false);
@@ -158,11 +171,12 @@ export function ImportarCustosDialog() {
       </DialogTrigger>
       <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Importar custos de planilha</DialogTitle>
+          <DialogTitle>Importar relatório mensal de custos</DialogTitle>
           <DialogDescription>
             Envie o extrato de custos (.xlsx) do ERP. A coluna <b>DATA</b> vira a competência (mês
             de referência) e <b>NOMEDEPTO</b> vira a fazenda de cada lançamento. Fazendas, safras e
-            categorias que ainda não existirem são criadas automaticamente.
+            categorias que ainda não existirem são criadas automaticamente. Pode reenviar o mesmo
+            relatório todo mês: linhas já importadas antes (mesma origem no ERP) não duplicam.
           </DialogDescription>
         </DialogHeader>
 
@@ -198,7 +212,7 @@ export function ImportarCustosDialog() {
 
           {analise ? (
             <>
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
                 <div className="rounded-md border border-border p-3">
                   <p className="text-xs text-muted-foreground">Lançamentos válidos</p>
                   <p className="num font-semibold">{analise.linhas.length}</p>
@@ -216,7 +230,17 @@ export function ImportarCustosDialog() {
                   </p>
                 </div>
                 <div className="rounded-md border border-border p-3">
-                  <p className="text-xs text-muted-foreground">Ignoradas</p>
+                  <p className="text-xs text-muted-foreground">Já importados antes</p>
+                  <p className="num font-semibold">{jaImportados ?? "—"}</p>
+                </div>
+                <div className="rounded-md border border-border p-3">
+                  <p className="text-xs text-muted-foreground">Novos a importar</p>
+                  <p className="num font-semibold text-success">
+                    {jaImportados !== null ? analise.linhas.length - jaImportados : "—"}
+                  </p>
+                </div>
+                <div className="rounded-md border border-border p-3">
+                  <p className="text-xs text-muted-foreground">Ignoradas (inválidas)</p>
                   <p
                     className={`num font-semibold ${analise.ignoradas > 0 ? "text-destructive" : ""}`}
                   >
