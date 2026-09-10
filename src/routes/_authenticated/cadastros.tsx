@@ -46,6 +46,7 @@ function Cadastros() {
 
   const [cultura, setCultura] = useState({ nome: "", unidade_medida: "sc 60kg" });
   const [categoria, setCategoria] = useState({ nome: "", tipo: "direto" });
+  const [fazenda, setFazenda] = useState({ nome: "" });
   const [safra, setSafra] = useState({
     nome: "",
     cultura_id: "",
@@ -62,6 +63,7 @@ function Cadastros() {
           <TabsTrigger value="safras">Safras</TabsTrigger>
           <TabsTrigger value="culturas">Culturas</TabsTrigger>
           <TabsTrigger value="categorias">Categorias de custo</TabsTrigger>
+          <TabsTrigger value="fazendas">Fazendas</TabsTrigger>
         </TabsList>
 
         <TabsContent value="safras" className="mt-6 grid gap-6 lg:grid-cols-[380px_1fr]">
@@ -332,6 +334,62 @@ function Cadastros() {
                         <Trash2 className="size-4" />
                       </Button>
                     </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="fazendas" className="mt-6 grid gap-6 lg:grid-cols-[380px_1fr]">
+          <Card className="h-fit p-6">
+            <h2 className="font-display text-lg font-semibold">Nova fazenda</h2>
+            <form
+              className="mt-4 space-y-4"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (await inserir("fazendas", fazenda)) {
+                  setFazenda({ nome: "" });
+                  recarregar();
+                }
+              }}
+            >
+              <div className="space-y-2">
+                <Label>Nome</Label>
+                <Input
+                  required
+                  placeholder="Faz. Aroeira"
+                  value={fazenda.nome}
+                  onChange={(e) => setFazenda({ ...fazenda, nome: e.target.value })}
+                />
+              </div>
+              <Button type="submit" className="w-full">
+                Cadastrar fazenda
+              </Button>
+            </form>
+          </Card>
+
+          <Card className="p-6">
+            <h2 className="font-display text-lg font-semibold">Fazendas</h2>
+            <div className="mt-4 space-y-2">
+              {d.fazendas.length === 0 ? (
+                <Vazio texto="Nenhuma fazenda cadastrada. Cadastre aqui ou importe uma planilha de custos em Custos & Colheita." />
+              ) : (
+                d.fazendas.map((f) => (
+                  <div
+                    key={f.id}
+                    className="flex items-center justify-between rounded-lg border border-border px-4 py-3"
+                  >
+                    <span className="font-medium">{f.nome}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={async () => {
+                        if (await remover("fazendas", f.id)) recarregar();
+                      }}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
                   </div>
                 ))
               )}

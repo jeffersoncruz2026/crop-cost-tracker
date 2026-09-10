@@ -21,8 +21,10 @@ export type Database = {
           created_at: string
           data_lancamento: string
           descricao: string
+          fazenda_id: string | null
           id: string
           observacao: string | null
+          origem_linha: number | null
           safra_id: string
           user_id: string
           valor: number
@@ -33,8 +35,10 @@ export type Database = {
           created_at?: string
           data_lancamento?: string
           descricao: string
+          fazenda_id?: string | null
           id?: string
           observacao?: string | null
+          origem_linha?: number | null
           safra_id: string
           user_id?: string
           valor: number
@@ -45,8 +49,10 @@ export type Database = {
           created_at?: string
           data_lancamento?: string
           descricao?: string
+          fazenda_id?: string | null
           id?: string
           observacao?: string | null
+          origem_linha?: number | null
           safra_id?: string
           user_id?: string
           valor?: number
@@ -57,6 +63,13 @@ export type Database = {
             columns: ["categoria_id"]
             isOneToOne: false
             referencedRelation: "categorias_custo"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "apontamentos_custo_fazenda_id_fkey"
+            columns: ["fazenda_id"]
+            isOneToOne: false
+            referencedRelation: "fazendas"
             referencedColumns: ["id"]
           },
           {
@@ -242,6 +255,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      fazendas: {
+        Row: {
+          created_at: string
+          id: string
+          nome: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          nome: string
+          user_id?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          nome?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       safras: {
         Row: {

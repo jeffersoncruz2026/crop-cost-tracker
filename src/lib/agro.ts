@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 export type Cultura = { id: string; nome: string; unidade_medida: string };
 export type Categoria = { id: string; nome: string; tipo: "direto" | "indireto" };
+export type Fazenda = { id: string; nome: string };
 export type Safra = {
   id: string;
   cultura_id: string;
@@ -16,11 +17,13 @@ export type Apontamento = {
   id: string;
   safra_id: string;
   categoria_id: string;
+  fazenda_id: string | null;
   competencia: string;
   descricao: string;
   valor: number;
   data_lancamento: string;
   observacao: string | null;
+  origem_linha: number | null;
 };
 export type Colheita = {
   id: string;
@@ -66,7 +69,6 @@ async function tabela<T>(nome: string, order: string): Promise<T[]> {
   return (data ?? []) as T[];
 }
 
-
 export function useDados() {
   const culturas = useQuery({
     queryKey: ["culturas"],
@@ -75,6 +77,10 @@ export function useDados() {
   const categorias = useQuery({
     queryKey: ["categorias"],
     queryFn: () => tabela<Categoria>("categorias_custo", "nome"),
+  });
+  const fazendas = useQuery({
+    queryKey: ["fazendas"],
+    queryFn: () => tabela<Fazenda>("fazendas", "nome"),
   });
   const safras = useQuery({
     queryKey: ["safras"],
@@ -104,6 +110,7 @@ export function useDados() {
   return {
     culturas: culturas.data ?? [],
     categorias: categorias.data ?? [],
+    fazendas: fazendas.data ?? [],
     safras: safras.data ?? [],
     apontamentos: apontamentos.data ?? [],
     colheitas: colheitas.data ?? [],
@@ -125,6 +132,7 @@ export function useRecarregar() {
     [
       "culturas",
       "categorias",
+      "fazendas",
       "safras",
       "apontamentos",
       "colheitas",
@@ -149,10 +157,7 @@ export type ResultadoSafra = {
   qtdVendida: number;
 };
 
-export function calcularResultado(
-  safraId: string,
-  d: ReturnType<typeof useDados>,
-): ResultadoSafra {
+export function calcularResultado(safraId: string, d: ReturnType<typeof useDados>): ResultadoSafra {
   const custoTotal = d.apontamentos
     .filter((a) => a.safra_id === safraId)
     .reduce((s, a) => s + Number(a.valor), 0);
