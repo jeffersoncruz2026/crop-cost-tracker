@@ -24,6 +24,7 @@ export type Database = {
           fazenda_id: string | null
           id: string
           observacao: string | null
+          origem_linha: number | null
           safra_id: string
           user_id: string
           valor: number
@@ -37,6 +38,7 @@ export type Database = {
           fazenda_id?: string | null
           id?: string
           observacao?: string | null
+          origem_linha?: number | null
           safra_id: string
           user_id?: string
           valor: number
@@ -50,6 +52,7 @@ export type Database = {
           fazenda_id?: string | null
           id?: string
           observacao?: string | null
+          origem_linha?: number | null
           safra_id?: string
           user_id?: string
           valor?: number
