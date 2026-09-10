@@ -26,6 +26,7 @@ export type Database = {
           observacao: string | null
           origem_linha: number | null
           safra_id: string
+          talhao: string | null
           user_id: string
           valor: number
         }
@@ -40,6 +41,7 @@ export type Database = {
           observacao?: string | null
           origem_linha?: number | null
           safra_id: string
+          talhao?: string | null
           user_id?: string
           valor: number
         }
@@ -54,6 +56,7 @@ export type Database = {
           observacao?: string | null
           origem_linha?: number | null
           safra_id?: string
+          talhao?: string | null
           user_id?: string
           valor?: number
         }

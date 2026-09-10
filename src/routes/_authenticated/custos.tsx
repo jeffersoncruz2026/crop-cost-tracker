@@ -70,6 +70,7 @@ function Custos() {
   const [apont, setApont] = useState({
     categoria_id: "",
     fazenda_id: "",
+    talhao: "",
     competencia: mesAtual().slice(0, 7),
     descricao: "",
     valor: "",
@@ -150,6 +151,7 @@ function Custos() {
                       safra_id: idAtual,
                       categoria_id: apont.categoria_id,
                       fazenda_id: apont.fazenda_id || null,
+                      talhao: apont.talhao || null,
                       competencia: `${apont.competencia}-01`,
                       descricao: apont.descricao,
                       valor: Number(apont.valor),
@@ -197,6 +199,14 @@ function Custos() {
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Talhão</Label>
+                    <Input
+                      placeholder="Opcional"
+                      value={apont.talhao}
+                      onChange={(e) => setApont({ ...apont, talhao: e.target.value })}
+                    />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2">
@@ -350,6 +360,7 @@ function Custos() {
                         <TableHead>Competência</TableHead>
                         <TableHead>Categoria</TableHead>
                         <TableHead>Fazenda</TableHead>
+                        <TableHead>Talhão</TableHead>
                         <TableHead>Descrição</TableHead>
                         <TableHead className="text-right">Valor</TableHead>
                         <TableHead />
@@ -364,6 +375,9 @@ function Custos() {
                           </TableCell>
                           <TableCell>
                             {d.fazendas.find((f) => f.id === a.fazenda_id)?.nome ?? "—"}
+                          </TableCell>
+                          <TableCell className="max-w-[160px] truncate" title={a.talhao ?? ""}>
+                            {a.talhao ?? "—"}
                           </TableCell>
                           <TableCell className="max-w-[280px] truncate">{a.descricao}</TableCell>
                           <TableCell className="num text-right">{brl(Number(a.valor))}</TableCell>

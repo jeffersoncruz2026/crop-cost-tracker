@@ -38,9 +38,12 @@ function ListaGrupos({
 }: {
   titulo: string;
   grupos: { nome: string; registros: number }[];
-  nomesExistentes: Set<string>;
+  /** Quando ausente, a lista é só informativa (não representa algo que será criado). */
+  nomesExistentes?: Set<string>;
 }) {
-  const novos = grupos.filter((g) => !nomesExistentes.has(g.nome.trim().toLowerCase())).length;
+  const novos = nomesExistentes
+    ? grupos.filter((g) => !nomesExistentes.has(g.nome.trim().toLowerCase())).length
+    : 0;
   return (
     <div>
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -49,7 +52,7 @@ function ListaGrupos({
       </p>
       <div className="mt-2 max-h-32 space-y-1 overflow-y-auto rounded-md border border-border p-2">
         {grupos.map((g) => {
-          const nova = !nomesExistentes.has(g.nome.trim().toLowerCase());
+          const nova = nomesExistentes ? !nomesExistentes.has(g.nome.trim().toLowerCase()) : false;
           return (
             <div key={g.nome} className="flex items-center justify-between gap-2 text-xs">
               <span className="truncate" title={g.nome}>
@@ -76,7 +79,7 @@ export function ImportarCustosDialog() {
   const [erro, setErro] = useState<string | null>(null);
   const [analise, setAnalise] = useState<ResultadoAnalise | null>(null);
   const [jaImportados, setJaImportados] = useState<number | null>(null);
-  const [culturaId, setCulturaId] = useState("");
+  const [safraId, setSafraId] = useState("");
 
   function reiniciar() {
     setNomeArquivo(null);
@@ -84,7 +87,7 @@ export function ImportarCustosDialog() {
     setErro(null);
     setAnalise(null);
     setJaImportados(null);
-    setCulturaId("");
+    setSafraId("");
   }
 
   async function selecionarArquivo(arquivo: File) {
@@ -104,10 +107,15 @@ export function ImportarCustosDialog() {
       }
       setAnalise(resultado);
 
+      // Sugere a safra pela cultura: cultura cujo nome aparece no texto dos talhões e que
+      // tenha exatamente uma safra cadastrada.
       const culturaDetectada = d.culturas.find((c) =>
-        resultado.safras.some((s) => s.nome.toUpperCase().includes(c.nome.toUpperCase())),
+        resultado.talhoes.some((t) => t.nome.toUpperCase().includes(c.nome.toUpperCase())),
       );
-      if (culturaDetectada) setCulturaId(culturaDetectada.id);
+      if (culturaDetectada) {
+        const safrasDaCultura = d.safras.filter((s) => s.cultura_id === culturaDetectada.id);
+        if (safrasDaCultura.length === 1) setSafraId(safrasDaCultura[0]!.id);
+      }
 
       try {
         setJaImportados(await contarJaImportados(resultado));
@@ -122,13 +130,12 @@ export function ImportarCustosDialog() {
   }
 
   async function confirmar() {
-    if (!analise || !culturaId) return;
+    if (!analise || !safraId) return;
     setEstado("importando");
     setErro(null);
     try {
-      const resultado = await importarCustos(analise, culturaId, {
+      const resultado = await importarCustos(analise, safraId, {
         fazendas: d.fazendas,
-        safras: d.safras,
         categorias: d.categorias,
       });
       const duplicados =
@@ -137,8 +144,8 @@ export function ImportarCustosDialog() {
           : "";
       toast.success(
         `${resultado.apontamentosCriados} lançamentos importados` +
-          ` (${resultado.fazendasCriadas} fazendas, ${resultado.safrasCriadas} safras e` +
-          ` ${resultado.categoriasCriadas} categorias novas).${duplicados}`,
+          ` (${resultado.fazendasCriadas} fazendas e ${resultado.categoriasCriadas}` +
+          ` categorias novas).${duplicados}`,
       );
       recarregar();
       setOpen(false);
@@ -173,10 +180,11 @@ export function ImportarCustosDialog() {
         <DialogHeader>
           <DialogTitle>Importar relatório mensal de custos</DialogTitle>
           <DialogDescription>
-            Envie o extrato de custos (.xlsx) do ERP. A coluna <b>DATA</b> vira a competência (mês
-            de referência) e <b>NOMEDEPTO</b> vira a fazenda de cada lançamento. Fazendas, safras e
-            categorias que ainda não existirem são criadas automaticamente. Pode reenviar o mesmo
-            relatório todo mês: linhas já importadas antes (mesma origem no ERP) não duplicam.
+            Envie o extrato de custos (.xlsx) do ERP para uma safra já cadastrada. A coluna{" "}
+            <b>DATA</b> vira a competência (mês de referência), <b>NOMEDEPTO</b> vira a fazenda e{" "}
+            <b>NOMECUSTO</b> (talhão da atividade) fica registrado em cada lançamento — o custeio
+            continua por safra, sem quebra por talhão. Pode reenviar o mesmo relatório todo mês:
+            linhas já importadas antes (mesma origem no ERP) não duplicam.
           </DialogDescription>
         </DialogHeader>
 
@@ -250,22 +258,26 @@ export function ImportarCustosDialog() {
               </div>
 
               <div className="space-y-2">
-                <Label>Cultura das safras a criar</Label>
-                <Select value={culturaId} onValueChange={setCulturaId}>
+                <Label>Safra de destino</Label>
+                <Select value={safraId} onValueChange={setSafraId}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
                   <SelectContent>
-                    {d.culturas.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.nome}
+                    {d.safras.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.nome}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {d.culturas.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Todos os lançamentos desta planilha entram nesta safra — o custeio não é quebrado
+                  por talhão.
+                </p>
+                {d.safras.length === 0 ? (
                   <p className="text-xs text-destructive">
-                    Cadastre uma cultura em Cadastros antes de importar.
+                    Cadastre uma safra em Cadastros antes de importar.
                   </p>
                 ) : null}
               </div>
@@ -276,11 +288,7 @@ export function ImportarCustosDialog() {
                   grupos={analise.fazendas}
                   nomesExistentes={nomes(d.fazendas)}
                 />
-                <ListaGrupos
-                  titulo="Safras"
-                  grupos={analise.safras}
-                  nomesExistentes={nomes(d.safras)}
-                />
+                <ListaGrupos titulo="Talhões (informativo)" grupos={analise.talhoes} />
                 <ListaGrupos
                   titulo="Categorias de custo"
                   grupos={analise.categorias}
@@ -292,7 +300,7 @@ export function ImportarCustosDialog() {
         </div>
 
         <DialogFooter>
-          <Button onClick={confirmar} disabled={!analise || !culturaId || estado === "importando"}>
+          <Button onClick={confirmar} disabled={!analise || !safraId || estado === "importando"}>
             {estado === "importando" ? <Loader2 className="size-4 animate-spin" /> : null}
             Confirmar importação
           </Button>

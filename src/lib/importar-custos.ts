@@ -2,7 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { LinhaPlanilha } from "@/lib/xlsx-lite";
 
 const COL_FAZENDA = "NOMEDEPTO";
-const COL_SAFRA = "NOMECUSTO";
+const COL_TALHAO = "NOMECUSTO";
 const COL_CATEGORIA = "DESCRICAO_CONTABIL";
 const COL_DESCRICAO_1 = "COMPLEMENTO";
 const COL_DESCRICAO_2 = "NOMEPRODUTO";
@@ -11,13 +11,16 @@ const COL_DATA = "DATA";
 const COL_CONTA = "CONTA_CONTABIL";
 const COL_ORIGEM = "ROWL";
 
-export const COLUNAS_OBRIGATORIAS = [COL_FAZENDA, COL_SAFRA, COL_VALOR, COL_DATA] as const;
+export const COLUNAS_OBRIGATORIAS = [COL_FAZENDA, COL_TALHAO, COL_VALOR, COL_DATA] as const;
 
 const TAMANHO_LOTE = 200;
 
 export type LinhaCustoValida = {
   fazenda: string;
-  safra: string;
+  /** Talhão da atividade (coluna NOMECUSTO, ex: "F53T1 SOJA COMERCIAL..."). Guardado como
+   * informação de rastreio no lançamento — os custos continuam sendo por safra, sem quebra
+   * por talhão, como já é o modelo do sistema. */
+  talhao: string;
   categoria: string;
   categoriaTipo: "direto" | "indireto";
   descricao: string;
@@ -40,7 +43,7 @@ export type ResultadoAnalise = {
   competenciaMin: string | null;
   competenciaMax: string | null;
   fazendas: GrupoResumo[];
-  safras: (GrupoResumo & { dataInicio: string })[];
+  talhoes: GrupoResumo[];
   categorias: GrupoResumo[];
 };
 
@@ -53,24 +56,33 @@ function primeiroDiaDoMes(dataIso: string): string {
   return `${dataIso.slice(0, 7)}-01`;
 }
 
-/** Valida e agrupa as linhas cruas da planilha (DATA = mês de referência, NOMEDEPTO = fazenda). */
+function somarGrupo(mapa: Map<string, GrupoResumo>, nome: string, valor: number) {
+  const g = mapa.get(nome) ?? { nome, registros: 0, valorTotal: 0 };
+  g.registros++;
+  g.valorTotal += valor;
+  mapa.set(nome, g);
+}
+
+/** Valida e agrupa as linhas cruas da planilha (DATA = mês de referência, NOMEDEPTO = fazenda,
+ * NOMECUSTO = talhão da atividade). Todas as linhas são importadas para UMA safra já cadastrada,
+ * escolhida por quem importa — o sistema não quebra custo por talhão. */
 export function analisarPlanilhaCustos(linhas: LinhaPlanilha[]): ResultadoAnalise {
   const validas: LinhaCustoValida[] = [];
   let ignoradas = 0;
 
   const fazendasMap = new Map<string, GrupoResumo>();
-  const safrasMap = new Map<string, GrupoResumo & { dataInicio: string }>();
+  const talhoesMap = new Map<string, GrupoResumo>();
   const categoriasMap = new Map<string, GrupoResumo>();
 
   for (const linha of linhas) {
     const fazenda = texto(linha[COL_FAZENDA]);
-    const safra = texto(linha[COL_SAFRA]);
+    const talhao = texto(linha[COL_TALHAO]);
     const dataRaw = texto(linha[COL_DATA]);
     const valorRaw = linha[COL_VALOR];
     const valor = typeof valorRaw === "number" ? valorRaw : Number(valorRaw);
     const dataValida = /^\d{4}-\d{2}-\d{2}$/.test(dataRaw);
 
-    if (!fazenda || !safra || !dataValida || !Number.isFinite(valor)) {
+    if (!fazenda || !talhao || !dataValida || !Number.isFinite(valor)) {
       ignoradas++;
       continue;
     }
@@ -88,7 +100,7 @@ export function analisarPlanilhaCustos(linhas: LinhaPlanilha[]): ResultadoAnalis
 
     validas.push({
       fazenda,
-      safra,
+      talhao,
       categoria,
       categoriaTipo: categoria.toUpperCase().startsWith("RATEIO") ? "indireto" : "direto",
       descricao,
@@ -101,26 +113,9 @@ export function analisarPlanilhaCustos(linhas: LinhaPlanilha[]): ResultadoAnalis
       origemLinha,
     });
 
-    const fz = fazendasMap.get(fazenda) ?? { nome: fazenda, registros: 0, valorTotal: 0 };
-    fz.registros++;
-    fz.valorTotal += valor;
-    fazendasMap.set(fazenda, fz);
-
-    const sf = safrasMap.get(safra) ?? {
-      nome: safra,
-      registros: 0,
-      valorTotal: 0,
-      dataInicio: dataRaw,
-    };
-    sf.registros++;
-    sf.valorTotal += valor;
-    if (dataRaw < sf.dataInicio) sf.dataInicio = dataRaw;
-    safrasMap.set(safra, sf);
-
-    const ct = categoriasMap.get(categoria) ?? { nome: categoria, registros: 0, valorTotal: 0 };
-    ct.registros++;
-    ct.valorTotal += valor;
-    categoriasMap.set(categoria, ct);
+    somarGrupo(fazendasMap, fazenda, valor);
+    somarGrupo(talhoesMap, talhao, valor);
+    somarGrupo(categoriasMap, categoria, valor);
   }
 
   const competencias = validas.map((l) => l.competencia).sort();
@@ -133,7 +128,7 @@ export function analisarPlanilhaCustos(linhas: LinhaPlanilha[]): ResultadoAnalis
     competenciaMin: competencias[0] ?? null,
     competenciaMax: competencias[competencias.length - 1] ?? null,
     fazendas: [...fazendasMap.values()].sort((a, b) => a.nome.localeCompare(b.nome)),
-    safras: [...safrasMap.values()].sort((a, b) => a.nome.localeCompare(b.nome)),
+    talhoes: [...talhoesMap.values()].sort((a, b) => a.nome.localeCompare(b.nome)),
     categorias: [...categoriasMap.values()].sort((a, b) => a.nome.localeCompare(b.nome)),
   };
 }
@@ -180,25 +175,6 @@ async function obterOuCriarFazenda(mapa: MapaIds, nome: string): Promise<string>
   return id;
 }
 
-async function obterOuCriarSafra(
-  mapa: MapaIds,
-  nome: string,
-  culturaId: string,
-  dataInicio: string,
-): Promise<string> {
-  const existente = mapa.get(chave(nome));
-  if (existente) return existente;
-  const { data, error } = await supabase
-    .from("safras" as never)
-    .insert({ nome, cultura_id: culturaId, data_inicio: dataInicio } as never)
-    .select("id")
-    .single();
-  if (error) throw new Error(`Falha ao criar safra "${nome}": ${error.message}`);
-  const id = (data as { id: string }).id;
-  mapa.set(chave(nome), id);
-  return id;
-}
-
 async function obterOuCriarCategoria(
   mapa: MapaIds,
   nome: string,
@@ -223,32 +199,23 @@ export type ResultadoImportacao = {
   apontamentosCriados: number;
   duplicadosIgnorados: number;
   fazendasCriadas: number;
-  safrasCriadas: number;
   categoriasCriadas: number;
 };
 
-/** Cria as fazendas/safras/categorias que ainda não existem e grava os lançamentos de custo em lote. */
+/** Grava os lançamentos de custo numa safra já existente, criando as fazendas/categorias que
+ * ainda não existirem. NOMECUSTO (talhão) é gravado como informação de rastreio, não vira safra. */
 export async function importarCustos(
   analise: ResultadoAnalise,
-  culturaId: string,
-  existentes: {
-    fazendas: CadastroExistente[];
-    safras: CadastroExistente[];
-    categorias: CadastroExistente[];
-  },
+  safraId: string,
+  existentes: { fazendas: CadastroExistente[]; categorias: CadastroExistente[] },
 ): Promise<ResultadoImportacao> {
   const fazendasMap = mapaPorNome(existentes.fazendas);
-  const safrasMap = mapaPorNome(existentes.safras);
   const categoriasMap = mapaPorNome(existentes.categorias);
   const fazendasAntes = fazendasMap.size;
-  const safrasAntes = safrasMap.size;
   const categoriasAntes = categoriasMap.size;
 
   for (const grupo of analise.fazendas) {
     await obterOuCriarFazenda(fazendasMap, grupo.nome);
-  }
-  for (const grupo of analise.safras) {
-    await obterOuCriarSafra(safrasMap, grupo.nome, culturaId, grupo.dataInicio);
   }
   for (const grupo of analise.categorias) {
     const linhaExemplo = analise.linhas.find((l) => l.categoria === grupo.nome);
@@ -256,7 +223,7 @@ export async function importarCustos(
   }
 
   const registros = analise.linhas.map((l) => ({
-    safra_id: safrasMap.get(chave(l.safra)) as string,
+    safra_id: safraId,
     categoria_id: categoriasMap.get(chave(l.categoria)) as string,
     fazenda_id: fazendasMap.get(chave(l.fazenda)) as string,
     competencia: l.competencia,
@@ -265,6 +232,7 @@ export async function importarCustos(
     data_lancamento: l.dataLancamento,
     observacao: l.observacao,
     origem_linha: l.origemLinha,
+    talhao: l.talhao,
   }));
 
   // upsert + ignoreDuplicates: linhas com o mesmo (user_id, origem_linha) de uma importação
@@ -284,7 +252,6 @@ export async function importarCustos(
     apontamentosCriados,
     duplicadosIgnorados: registros.length - apontamentosCriados,
     fazendasCriadas: fazendasMap.size - fazendasAntes,
-    safrasCriadas: safrasMap.size - safrasAntes,
     categoriasCriadas: categoriasMap.size - categoriasAntes,
   };
 }
